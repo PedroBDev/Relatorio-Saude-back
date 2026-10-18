@@ -11,4 +11,5 @@ class User(Base):
     nome: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     senha_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    municipio_id: Mapped[int] = mapped_column(ForeignKey("municipios.id"), nullable=False)
+    municipio_id: Mapped[int] = mapped_column(ForeignKey("municipios.id"), nullable=True)
+    role : Mapped[str] = mapped_column(String(50), nullable=False, default = "gestor") 

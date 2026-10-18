@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.api.routes import auth
 from app.api.routes import municipio
+from app.api.routes import user
 
 app = FastAPI(
     title="Saúde em Dados API",
@@ -11,3 +12,4 @@ app = FastAPI(
 
 app.include_router(auth.router)
 app.include_router(municipio.router)
+app.include_router(user.router)

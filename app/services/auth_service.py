@@ -13,15 +13,22 @@ def create_user(db: Session, user_data: UserCreate) -> User:
     if existing_user:
         raise ValueError("Email já cadastrado.")
 
-    if not db.get(Municipio, user_data.municipio_id):
-        raise ValueError("Municipio não encontrado.")
+    if user_data.role not in ["gestor", "admin"]:
+        raise ValueError("Role inválida. Deve ser 'gestor' ou 'admin'.")
 
+    if user_data.role == "gestor" and not user_data.municipio_id:
+        raise ValueError("Gestores devem estar associados a um município.")
+        
+    if user_data.role == "gestor":
+        if not db.get(Municipio, user_data.municipio_id):
+            raise ValueError("Municipio não encontrado.")    
 
     user = User(
         nome=user_data.nome,
         email=user_data.email,
         senha_hash=hash_password(user_data.password),
-        municipio_id=user_data.municipio_id
+        municipio_id=user_data.municipio_id,
+        role=user_data.role
     )
 
 
@@ -39,3 +46,5 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
         return None
 
     return user
+
+

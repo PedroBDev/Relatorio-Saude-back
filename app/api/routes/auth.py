@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_user 
+from app.api.dependencies import get_current_user, get_current_admin
 from app.core.database import get_db
 from app.core.security import create_access_token
 from app.models.user import User 
@@ -16,7 +16,7 @@ router = APIRouter(
 
 
 @router.post("/register", response_model=UserResponse)
-def register_user(user_data : UserCreate, db : Session = Depends(get_db)):
+def register_user(user_data : UserCreate, db : Session = Depends(get_db), current_admin = Depends(get_current_admin)):
     try : 
         return create_user(db, user_data)
     except ValueError as e:
@@ -36,3 +36,4 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 def me(current_user: User = Depends(get_current_user)):
     return current_user    
+
