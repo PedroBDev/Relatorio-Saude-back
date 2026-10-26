@@ -18,6 +18,9 @@ A API guarda os pacientes e as consultas, calcula os relatórios de cada grupo (
 - [Relatórios por período (histórico)](#relatórios-por-período-histórico)
 - [Regras de risco](#regras-de-risco)
 - [Consultas permitidas do chatbot](#consultas-permitidas-do-chatbot)
+- [Endpoints de relatório e chat](#endpoints-de-relatório-e-chat)
+- [Modelo de Machine Learning](#modelo-de-machine-learning)
+- [Testes](#testes)
 - [Migrations](#migrations)
 - [Limitações conhecidas](#limitações-conhecidas)
 
@@ -61,7 +64,15 @@ python -m app.seed        # gera 1500 pacientes falsos e um ano de consultas
 
 Para apagar os dados falsos e gerar de novo: `python -m app.seed --limpar`.
 
-### 5. Subir a API
+### 5. Modelo do chatbot
+
+```bash
+python ml/treinar.py      # gera ml/modelo.pkl (cada pessoa gera o seu)
+```
+
+Sem o `modelo.pkl` a API sobe normalmente, mas o `POST /chat` responde 503.
+
+### 6. Subir a API
 
 ```bash
 uvicorn app.main:app --reload
@@ -79,7 +90,7 @@ app/
 ├── seed.py                 # gera dados falsos para desenvolvimento
 ├── api/
 │   ├── dependencies.py     # get_current_user / get_current_admin (leem o token JWT)
-│   └── routes/             # auth, municipios, users
+│   └── routes/             # auth, municipios, users, chat, relatorios
 ├── core/
 │   ├── config.py           # lê o .env
 │   ├── database.py         # conexão e get_db
@@ -90,7 +101,13 @@ app/
     ├── auth_service.py
     ├── user_service.py
     ├── municipio_service.py
-    └── consultas.py        # consultas permitidas do chatbot
+    ├── consultas.py        # consultas SQL permitidas (único ponto que lê os relatórios no banco)
+    ├── relatorio_service.py  # permissão + município + consulta + auditoria (usado por /chat e /relatorios)
+    ├── chat_service.py     # fluxo do chatbot (modelo, contexto, mensagens fixas)
+    ├── extrair_parametros.py # extrai mês/ano da frase ("agosto", "mês passado", "08/2026")
+    └── permissoes.py       # quais perfis podem pedir cada relatório
+ml/                         # base de frases, treino e teste do modelo do chatbot
+tests/                      # testes automatizados (pytest)
 alembic/versions/           # migrations
 ```
 
@@ -309,6 +326,90 @@ Para ver um exemplo completo, com erros incluídos: `python -m app.services.cons
 
 ---
 
+## Endpoints de relatório e chat
+
+Todos exigem login (`Authorization: Bearer <token>` do `POST /auth/login`).
+
+| Endpoint | Para que serve |
+|---|---|
+| `GET /relatorios` | lista os relatórios que o usuário pode pedir |
+| `GET /relatorios/{relatorio}?mes=7&ano=2026` | dados de um relatório, para as telas do front |
+| `POST /chat` | chatbot: recebe `{"mensagem": "..."}` em linguagem natural |
+
+As duas formas usam o **mesmo** `relatorio_service.gerar_relatorio`, então a tela e o chatbot sempre mostram os mesmos números:
+
+```
+GET /relatorios/{relatorio} ──┐
+                              ├──> relatorio_service ──> consultas.py ──> PostgreSQL
+POST /chat ── modelo de ML ───┘    (permissão, município, auditoria)
+```
+
+**O modelo de Machine Learning não acessa o banco.** Ele só recebe o texto e devolve o nome da intenção (ex.: `relatorio_hipertensos`). Quem acessa o banco é o `consultas.py`, e só com as consultas já escritas nele. O modelo roda no próprio servidor: nenhuma mensagem é enviada para serviços externos.
+
+### Regras de acesso
+
+- O município é **sempre o do usuário logado** (vem do token). O `POST /chat` só aceita o campo `mensagem` (campo extra = erro 422), e no `GET /relatorios` um `municipio_id` na URL é ignorado.
+- Perfis `admin` e `gestor` veem todos os relatórios (`app/services/permissoes.py`).
+- Usuário sem município recebe **403**: "Seu usuário não está vinculado a um município."
+- Erros do banco vão para o log do servidor; o usuário recebe uma mensagem genérica (500).
+
+### Fluxo do `POST /chat`
+
+1. Se o chatbot tinha perguntado o mês e a mensagem traz um mês ("agosto"), continua o pedido anterior. O contexto fica em memória por usuário e expira em 5 minutos.
+2. O modelo classifica a intenção. Confiança abaixo de 60% → "Não entendi, pode reformular?".
+3. `saudacao`, `ajuda` e `fora_do_escopo` → resposta fixa, sem consultar o banco.
+4. Relatório sem mês → pergunta "De qual mês você quer o relatório?".
+5. Gera o relatório pelo `relatorio_service`.
+
+Resposta, sempre com os mesmos campos:
+
+```json
+{"tipo": "mensagem | pergunta | relatorio | erro", "texto": "...", "intencao": "...", "parametros": {"mes": 7, "ano": 2026}, "dados": [...]}
+```
+
+### Auditoria
+
+Cada pedido de relatório, pela tela ou pelo chat, vira uma linha em `auditoria_relatorios`: quem pediu, a origem (`chat` ou `api`), o relatório, o mês e ano, o resultado (`ok`, `negado` ou `erro`), a quantidade de registros e a data e hora. **Não guarda dados de pacientes nem o texto digitado.**
+
+### Testando pelo `/docs`
+
+1. `POST /auth/login` → copie o `access_token`.
+2. Botão **Authorize** → cole o token.
+3. `POST /chat` com `{"mensagem": "quero o relatório dos hipertensos"}` e depois `{"mensagem": "julho"}`.
+4. `GET /relatorios/relatorio_hipertensos` com `mes=7` e `ano=2026`.
+
+---
+
+## Modelo de Machine Learning
+
+Pasta `ml/`. Classifica a intenção da frase com **TF-IDF + Regressão Logística** (scikit-learn).
+
+```bash
+python ml/verificar_base.py   # confere o frases.csv (duplicadas, vazias, quase iguais)
+python ml/treinar.py          # treina, mostra as métricas, salva matriz_confusao.png e modelo.pkl
+python ml/testar_modelo.py    # digite frases no terminal ("sair" encerra)
+```
+
+- `frases.csv`: base de treino (`frase,intencao`), com 9 intenções.
+- O `modelo.pkl` depende da versão do scikit-learn: cada pessoa gera o seu com `treinar.py`.
+- Para melhorar o modelo: acrescente frases ao `frases.csv` e rode `treinar.py` de novo.
+
+---
+
+## Testes
+
+```bash
+pytest -v
+```
+
+Os testes usam o banco do `.env`, mas cada teste roda dentro de uma transação desfeita no final: **nada fica gravado**. Precisam de `alembic upgrade head` e do `ml/modelo.pkl`.
+
+- `tests/test_chat.py`: acesso sem login, relatório com e sem permissão, isolamento por município, pedido sem mês, resposta do mês na mensagem seguinte, contexto expirado, fora do escopo, confiança baixa e erro de banco.
+- `tests/test_relatorios.py`: os endpoints `/relatorios`, incluindo que tela e chat devolvem os mesmos dados.
+- `tests/test_extrair_parametros.py`: a extração de mês e ano.
+
+---
+
 ## Migrations
 
 As migrations ficam em `alembic/versions/` e são aplicadas em ordem:
@@ -319,6 +420,7 @@ As migrations ficam em `alembic/versions/` e são aplicadas em ordem:
 | `b1851e0099c1` | adiciona `role` ao usuário |
 | `aef97b179cbd` | torna o município do usuário opcional |
 | `720dbc080c91` | cria `unidades_saude`, `pacientes`, `paciente_grupos`, `consultas`, `comorbidades`, a função `idade_em`, as funções `fn_*` e as views `vw_*` |
+| `7d0426390fbf` | cria `auditoria_relatorios` |
 
 ### Comandos
 
@@ -349,4 +451,7 @@ Uma migration que **já foi enviada** para o repositório não deve ser editada.
 - **Comorbidades sem data:** a tabela `comorbidades` não tem data de diagnóstico. No relatório de idosos de um mês passado, comorbidades cadastradas depois também são contadas.
 - **Dados falsos com histórico de um ano:** o seed gera consultas dos últimos 12 meses. Relatórios de períodos anteriores vêm vazios.
 - **Correções alteram o passado:** como os relatórios são calculados a partir das consultas, corrigir uma consulta antiga muda o relatório daquele mês. Se for preciso "congelar" o relatório como foi entregue (auditoria), a ideia é criar uma tabela de fechamento mensal que salve o resultado das funções.
-- **Ainda não implementado:** modelo de Machine Learning do chatbot, rota que liga o chatbot ao `executar_consulta`, verificação de permissão nos relatórios e geração do PDF.
+- **Banco sem usuário somente leitura (melhoria futura):** hoje toda a API conecta com o mesmo usuário do Postgres, dono do banco. Quem garante que os relatórios só leem dados é o código (`consultas.py` só aceita `SELECT`). A melhoria planejada é criar um usuário do Postgres só com `SELECT` nas tabelas e `EXECUTE` nas funções `fn_*`, e fazer o `consultas.py` usar uma conexão separada com ele. Assim o próprio banco recusaria qualquer escrita vinda dos relatórios e do chatbot.
+- **Contexto do chat em memória:** some se o servidor reiniciar e não funciona com vários processos do servidor ao mesmo tempo. Suficiente para o projeto acadêmico.
+- **Rotas `/users` devolvem `senha_hash`:** elas não usam `response_model`. Corrigir com `UserResponse`.
+- **Ainda não implementado:** geração do PDF e integração com o front-end.
