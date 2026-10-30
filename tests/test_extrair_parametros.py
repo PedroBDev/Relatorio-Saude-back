@@ -20,6 +20,18 @@ HOJE = date(2026, 10, 25)
     ("relatório de junho do ano passado", {"mes": 6, "ano": 2025}),
     ("relatório das gestantes", {"mes": None, "ano": None}),
     ("gestantes de 2026", {"mes": None, "ano": 2026}),
+    # meses abreviados
+    ("gestantes de ago", {"mes": 8, "ano": 2026}),
+    ("pd me mandar os hipertensos de set", {"mes": 9, "ano": 2026}),
+    ("idosos de dez", {"mes": 12, "ano": 2025}),
+    ("diabeticos de mar de 2025", {"mes": 3, "ano": 2025}),
+    ("crianças ago/2026", {"mes": 8, "ano": 2026}),
+    ("hipertensos set/25", {"mes": 9, "ano": 2025}),
+    ("gestantes de abr.", {"mes": 4, "ano": 2026}),
+    # abreviação não pode ser achada dentro de outra palavra
+    ("quero marcar uma reunião", {"mes": None, "ano": None}),
+    ("relatório de setembro", {"mes": 9, "ano": 2026}),
+    ("outros relatórios", {"mes": None, "ano": None}),
 ])
 def test_extrair_periodo(frase, esperado):
     assert extrair_periodo(frase, hoje=HOJE) == esperado

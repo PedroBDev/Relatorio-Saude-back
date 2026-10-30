@@ -398,3 +398,96 @@ qual o placar do flamengo?,fora_do_escopo
 nada,fora_do_escopo
 me diz algo sobre você,fora_do_escopo
 lula ou bolsonaro?,fora_do_escopo
+pd me enviar o relatorio de gestantes,relatorio_gestantes
+vc pd me mandar as gestantes de agosto?,relatorio_gestantes
+qro o rel das gestantes de julho,relatorio_gestantes
+me manda as gravidas d setembro pfv,relatorio_gestantes
+qts gestantes tivemos em maio?,relatorio_gestantes
+tem como vc puxar o pre natal de junho pra mim?,relatorio_gestantes
+preciso das gestantes de outubro hj,relatorio_gestantes
+pf manda o relatório das gestantes,relatorio_gestantes
+oq tem de gestantes em março?,relatorio_gestantes
+"blz, agr as gestantes de abril",relatorio_gestantes
+pd me enviar o relatorio dos hipertensos,relatorio_hipertensos
+vc pd me mandar os hipertensos de agosto?,relatorio_hipertensos
+qro o rel de hipertensão de julho,relatorio_hipertensos
+me manda o pessoal c pressão alta pfv,relatorio_hipertensos
+qts hipertensos tivemos em maio?,relatorio_hipertensos
+tem como vc puxar os hipertensos d junho pra mim?,relatorio_hipertensos
+preciso dos hipertensos de outubro hj,relatorio_hipertensos
+pf manda o relatório de hipertensos,relatorio_hipertensos
+oq tem de pressão alta em março?,relatorio_hipertensos
+"blz, agr os hipertensos de abril",relatorio_hipertensos
+pd me enviar o relatorio dos diabeticos,relatorio_diabeticos
+vc pd me mandar os diabéticos de agosto?,relatorio_diabeticos
+qro o rel de diabetes de julho,relatorio_diabeticos
+me manda o pessoal c glicada alta pfv,relatorio_diabeticos
+qts diabeticos tivemos em maio?,relatorio_diabeticos
+tem como vc puxar os diabéticos d junho pra mim?,relatorio_diabeticos
+preciso dos diabéticos de outubro hj,relatorio_diabeticos
+pf manda o relatório de diabetes,relatorio_diabeticos
+oq tem de diabete em março?,relatorio_diabeticos
+"blz, agr os diabeticos de abril",relatorio_diabeticos
+pd me enviar o relatorio das crianças,relatorio_criancas
+vc pd me mandar as crianças de agosto?,relatorio_criancas
+qro o rel da puericultura de julho,relatorio_criancas
+me manda as crianças c vacina atrasada pfv,relatorio_criancas
+qts crianças tivemos em maio?,relatorio_criancas
+tem como vc puxar as crianças d junho pra mim?,relatorio_criancas
+preciso das crianças de outubro hj,relatorio_criancas
+pf manda o relatório infantil,relatorio_criancas
+oq tem de criança em março?,relatorio_criancas
+"blz, agr as criancas de abril",relatorio_criancas
+pd me enviar o relatorio dos idosos,relatorio_idosos
+vc pd me mandar os idosos de agosto?,relatorio_idosos
+qro o rel da terceira idade de julho,relatorio_idosos
+me manda os idosos c comorbidade pfv,relatorio_idosos
+qts idosos tivemos em maio?,relatorio_idosos
+tem como vc puxar os idosos d junho pra mim?,relatorio_idosos
+preciso dos idosos de outubro hj,relatorio_idosos
+pf manda o relatório dos idosos,relatorio_idosos
+oq tem de idoso em março?,relatorio_idosos
+"blz, agr os idosos de abril",relatorio_idosos
+pd me mandar o resumo geral,resumo_cobertura
+vc tem a cobertura d agosto?,resumo_cobertura
+qro ver a cobertura de td,resumo_cobertura
+qual a % de cobertura hj?,resumo_cobertura
+me manda o resumão pfv,resumo_cobertura
+tem como ver os nºs gerais do mes?,resumo_cobertura
+cobertura de tds os grupos em julho pfv,resumo_cobertura
+oq tem de resumo de setembro?,resumo_cobertura
+qts atendidos vs cadastrados em maio?,resumo_cobertura
+"blz, agr o resumo de cobertura de abril",resumo_cobertura
+oi td bem?,saudacao
+oi tdb?,saudacao
+"bom dia, td certo?",saudacao
+eai blz?,saudacao
+"opa, td joia?",saudacao
+"oii, tudo bem c vc?",saudacao
+"boa tarde pessoal, blz?",saudacao
+"oi, bom dia p vc",saudacao
+"salve, td em ordem?",saudacao
+"fala, tdb?",saudacao
+oq vc faz?,ajuda
+vc faz oq exatamente?,ajuda
+como q eu uso isso?,ajuda
+"n sei usar, me ajuda pfv",ajuda
+qais relatorios vc tem?,ajuda
+pd me explicar como funciona?,ajuda
+oq eu posso te pedir?,ajuda
+como q peço um rel?,ajuda
+me ajuda aq pfv,ajuda
+tem algum tutorial p usar?,ajuda
+vc sabe a previsao do tempo hj?,fora_do_escopo
+me conta uma piada pfv,fora_do_escopo
+qm ganhou o jogo ontem?,fora_do_escopo
+qnt ta o dolar hj?,fora_do_escopo
+pd me recomendar um filme?,fora_do_escopo
+oq vc acha d futebol?,fora_do_escopo
+me ajuda c o trabalho da facul,fora_do_escopo
+vc gosta d musica?,fora_do_escopo
+tlg onde tem pizza aq perto?,fora_do_escopo
+kkk q isso,fora_do_escopo
+como anda a vida?,fora_do_escopo
+outra coisa,fora_do_escopo
+deixa p la,fora_do_escopo

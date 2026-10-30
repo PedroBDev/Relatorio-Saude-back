@@ -8,6 +8,8 @@ Exemplos (considerando hoje = 25/10/2026):
     "gestantes de dezembro"        -> {"mes": 12, "ano": 2025}  (dezembro de 2026 ainda não chegou)
     "hipertensos de março de 2025" -> {"mes": 3,  "ano": 2025}
     "idosos 08/2026"               -> {"mes": 8,  "ano": 2026}
+    "gestantes de ago"             -> {"mes": 8,  "ano": 2026}  (mês abreviado)
+    "hipertensos set/25"           -> {"mes": 9,  "ano": 2025}  (abreviado, ano com 2 dígitos)
     "crianças do mês passado"      -> {"mes": 9,  "ano": 2026}
     "diabéticos deste mês"         -> {"mes": 10, "ano": 2026}
     "relatório das gestantes"      -> {"mes": None, "ano": None}  (o chatbot precisa perguntar)
@@ -25,11 +27,22 @@ MESES = {
 NOMES_MESES = {numero: nome for nome, numero in MESES.items()}
 NOMES_MESES[3] = "março"
 
+# Abreviações de 3 letras, muito comuns no dia a dia ("gestantes de ago", "set/2026").
+ABREVIACOES_MESES = {
+    "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
+    "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
+}
+TODOS_OS_MESES = {**MESES, **ABREVIACOES_MESES}
+
 # \b = limite de palavra: "maio" casa em "de maio", mas não dentro de outra palavra.
-PADRAO_MES = re.compile(r"\b(" + "|".join(MESES) + r")\b")
+# Por isso "set" não é encontrado dentro de "setembro", nem "mar" dentro de "marcar".
+_NOMES = "|".join(TODOS_OS_MESES)
+PADRAO_MES = re.compile(r"\b(" + _NOMES + r")\b")
 PADRAO_ANO = re.compile(r"\b(\d{4})\b")
 # 08/2026, 8/2026, 08-2026
 PADRAO_MES_ANO_NUMERICO = re.compile(r"\b(0?[1-9]|1[0-2])\s*[/-]\s*(\d{4})\b")
+# ago/2026, ago/26, set-25, agosto/26 (o ponto de "ago." também é aceito)
+PADRAO_NOME_BARRA_ANO = re.compile(r"\b(" + _NOMES + r")\.?\s*[/-]\s*(\d{4}|\d{2})\b")
 
 EXPRESSOES_MES_PASSADO = ("mes passado", "ultimo mes", "mes anterior")
 EXPRESSOES_MES_ATUAL = ("este mes", "esse mes", "neste mes", "nesse mes", "deste mes", "desse mes", "mes atual")
@@ -69,9 +82,15 @@ def extrair_periodo(texto: str, hoje: date | None = None) -> dict:
     if numerico:
         return {"mes": int(numerico.group(1)), "ano": int(numerico.group(2))}
 
-    # 3. Nome do mês e ano com 4 dígitos, cada um onde estiver na frase
+    # 3. Nome com barra (ago/26). Ano com 2 dígitos vira 20xx.
+    com_barra = PADRAO_NOME_BARRA_ANO.search(frase)
+    if com_barra:
+        ano = int(com_barra.group(2))
+        return {"mes": TODOS_OS_MESES[com_barra.group(1)], "ano": ano if ano >= 1000 else 2000 + ano}
+
+    # 4. Nome (ou abreviação) do mês e ano com 4 dígitos, cada um onde estiver na frase
     encontrado_mes = PADRAO_MES.search(frase)
-    mes = MESES[encontrado_mes.group(1)] if encontrado_mes else None
+    mes = TODOS_OS_MESES[encontrado_mes.group(1)] if encontrado_mes else None
 
     encontrado_ano = PADRAO_ANO.search(frase)
     if encontrado_ano:

@@ -104,7 +104,7 @@ app/
     ├── consultas.py        # consultas SQL permitidas (único ponto que lê os relatórios no banco)
     ├── relatorio_service.py  # permissão + município + consulta + auditoria (usado por /chat e /relatorios)
     ├── chat_service.py     # fluxo do chatbot (modelo, contexto, mensagens fixas)
-    ├── extrair_parametros.py # extrai mês/ano da frase ("agosto", "mês passado", "08/2026")
+    ├── extrair_parametros.py # extrai mês/ano da frase ("agosto", "ago", "set/26", "mês passado", "08/2026")
     └── permissoes.py       # quais perfis podem pedir cada relatório
 ml/                         # base de frases, treino e teste do modelo do chatbot
 tests/                      # testes automatizados (pytest)
@@ -384,15 +384,35 @@ Cada pedido de relatório, pela tela ou pelo chat, vira uma linha em `auditoria_
 
 Pasta `ml/`. Classifica a intenção da frase com **TF-IDF + Regressão Logística** (scikit-learn).
 
+O TF-IDF usa **pedaços de palavras** (2 a 5 letras, `analyzer="char_wb"`) em vez de palavras inteiras. Assim "hipertenso", "hipertensos" e o erro "hipertenços" são reconhecidos como parecidos, e abreviações como "pd", "vc" e "qro" atrapalham menos. Na validação cruzada, a acurácia passou de 85,9% (palavras inteiras) para 93,7%.
+
+| Arquivo | O que é |
+|---|---|
+| `frases.csv` | base de treino (`frase,intencao`), com 9 intenções |
+| `verificar_base.py` | confere o `frases.csv`: linhas vazias, frases duplicadas ou quase iguais, mínimo por intenção |
+| `treinar.py` | treina, mostra as métricas e salva `modelo.pkl` e `matriz_confusao.png` |
+| `testar_modelo.py` | classifica frases digitadas no terminal (`sair` encerra) |
+| `modelo.pkl` | o modelo treinado, que a API carrega ao subir. Depende da versão do scikit-learn: cada pessoa gera o seu |
+
+### Roteiro: sempre que mudar o `frases.csv` ou o `treinar.py`
+
 ```bash
-python ml/verificar_base.py   # confere o frases.csv (duplicadas, vazias, quase iguais)
-python ml/treinar.py          # treina, mostra as métricas, salva matriz_confusao.png e modelo.pkl
-python ml/testar_modelo.py    # digite frases no terminal ("sair" encerra)
+source .venv/bin/activate
+python ml/verificar_base.py     # 1. base ok?
+python ml/treinar.py            # 2. treina e salva o modelo.pkl
+python ml/testar_modelo.py      # 3. testa frases no terminal ("sair" para sair)
+pytest -v                       # 4. todos os testes passando?
+# 5. reinicie a API (Ctrl+C no uvicorn e suba de novo):
+uvicorn app.main:app --reload
 ```
 
-- `frases.csv`: base de treino (`frase,intencao`), com 9 intenções.
-- O `modelo.pkl` depende da versão do scikit-learn: cada pessoa gera o seu com `treinar.py`.
-- Para melhorar o modelo: acrescente frases ao `frases.csv` e rode `treinar.py` de novo.
+1. **Conferir a base.** Salve o `frases.csv` (Ctrl+S) antes. O esperado é `Base OK`; se aparecer **AVISO**, corrija antes de treinar.
+2. **Treinar.** Compare com o resultado anterior para saber se a mudança ajudou. Referência atual: validação cruzada de **93,7%** e **1** resposta errada com confiança no conjunto de teste.
+3. **Testar no terminal**, principalmente as frases que motivaram a mudança.
+4. **Rodar os testes.** Os testes do chat usam o modelo de verdade: se algum quebrar depois do treino, o modelo novo passou a errar uma frase importante.
+5. **Reiniciar a API.** Ela só lê o `modelo.pkl` quando sobe, e o `--reload` só reage a arquivos `.py`. Sem reiniciar, o `/chat` continua com o modelo antigo.
+
+**Para melhorar o modelo:** teste frases, anote as que ele erra ou não entende, acrescente variações delas ao `frases.csv` (no formato `frase,intencao`; frase com vírgula vai entre aspas) e siga o roteiro. As intenções com mais confusão hoje são `ajuda` e `fora_do_escopo`.
 
 ---
 

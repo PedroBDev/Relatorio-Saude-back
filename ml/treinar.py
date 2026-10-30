@@ -12,11 +12,20 @@ O que ele faz:
   6. treina o modelo final com 100% da base e salva em modelo.pkl.
 
 O modelo é um Pipeline de duas etapas:
-  - TF-IDF: transforma cada frase em um vetor de números, dando mais peso às
-    palavras que aparecem muito naquela frase e pouco no resto da base
-    (ex.: "gestantes" pesa muito; "de" e "o" pesam pouco).
+  - TF-IDF de pedaços de palavras: quebra cada palavra em pedaços de 2 a 5 letras
+    ("gestantes" -> "ge", "ges", "gest", "esta", "tant"...) e transforma a frase
+    em um vetor de números, dando mais peso aos pedaços que aparecem muito naquela
+    frase e pouco no resto da base.
   - Regressão Logística: aprende, a partir desses números, qual intenção é a
     mais provável para cada frase.
+
+Por que pedaços e não palavras inteiras: com palavras inteiras, "hipertenso" e
+"hipertensos" (ou o erro "hipertenços") são palavras diferentes, e o modelo só
+reconhece a forma exata que viu no treino. Com pedaços, as três formas
+compartilham "hiper", "pert", "ertens"... e são reconhecidas como parecidas.
+Comparação feita com esta base (validação cruzada, 5 partes, C=30):
+    palavras inteiras (1 a 2 palavras):  acurácia 85,9% | 66% respondidas certas
+    pedaços de palavras (2 a 5 letras):  acurácia 93,7% | 82% respondidas certas
 """
 from pathlib import Path
 
@@ -54,19 +63,23 @@ def criar_modelo() -> Pipeline:
     """Monta o Pipeline TF-IDF + Regressão Logística (ainda sem treinar)."""
     return Pipeline([
         ("tfidf", TfidfVectorizer(
-            ngram_range=(1, 2),       # palavras sozinhas ("gestantes") e pares ("pré natal", "pressão alta")
-            lowercase=True,           # "Gestantes" e "gestantes" viram a mesma palavra
-            strip_accents="unicode",  # "relatório" e "relatorio" viram a mesma palavra
+            analyzer="char_wb",       # pedaços de letras dentro de cada palavra (veja o topo do arquivo)
+            ngram_range=(2, 5),       # pedaços de 2 a 5 letras
+            lowercase=True,           # "Gestantes" e "gestantes" viram a mesma coisa
+            strip_accents="unicode",  # "relatório" e "relatorio" viram a mesma coisa
+            sublinear_tf=True,        # um pedaço repetido na frase não ganha peso demais
         )),
         ("classificador", LogisticRegression(
             # C controla o quanto o modelo "confia" no que aprendeu. O padrão (C=1)
             # deixa as probabilidades muito baixas nesta base pequena com 9 intenções:
             # quase todo acerto ficava abaixo de 60% de confiança, e o chatbot
-            # responderia "Não entendi" o tempo todo. Com C=30, a acurácia é a mesma,
-            # mas a confiança dos acertos sobe. C maior = mais respostas, porém mais
-            # erros com confiança alta; 30 foi o equilíbrio testado para esta base.
+            # responderia "Não entendi" o tempo todo. C maior = mais respostas, porém
+            # mais erros com confiança alta. Testado nesta base:
+            #   C=10: 73% respondidas certas, 4 erradas com confiança
+            #   C=30: 82% respondidas certas, 5 erradas com confiança  <- escolhido
+            #   C=100: 87% respondidas certas, 8 erradas com confiança
             C=30,
-            max_iter=1000,  # número máximo de passos do treino (o padrão, 100, pode não bastar)
+            max_iter=2000,  # número máximo de passos do treino (o padrão, 100, pode não bastar)
         )),
     ])
 
