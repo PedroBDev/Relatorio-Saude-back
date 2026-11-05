@@ -479,6 +479,7 @@ Os testes usam o banco do `.env`, mas cada teste roda dentro de uma transação 
 - `tests/test_relatorios.py`: os endpoints `/relatorios`, incluindo que tela e chat devolvem os mesmos dados.
 - `tests/test_extrair_parametros.py`: a extração de mês e ano.
 - `tests/test_modelo.py`: o modelo salvo (meta de qualidade, modelo atualizado com a base e frases essenciais).
+- `tests/test_municipios.py`: só o admin cadastra municípios (401 sem login, 403 para o gestor).
 - `tests/test_users.py`: as rotas `/users` e o `/auth/me` nunca devolvem o `senha_hash`, e trocar a senha grava o hash.
 - `tests/test_monitorar_drift.py`: os alertas do relatório de monitoramento.
 - `tests/test_robustez.py`: o modelo e o `/chat` com entradas ruins: erros de digitação, maiúsculas e espaços, lixo (emoji, letras aleatórias, texto enorme), cumprimento misturado com pedido e texto com SQL. A regra principal: entrada sem sentido nunca vira relatório com confiança.
