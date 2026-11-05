@@ -1,0 +1,12 @@
+{
+  "data": "2026-11-04T22:30:01",
+  "frases": 506,
+  "intencoes": 9,
+  "acuracia_validacao_cruzada": 0.9387,
+  "desvio_validacao_cruzada": 0.0115,
+  "acuracia_teste": 0.9216,
+  "respondidas_certas_teste": 78,
+  "erradas_com_confianca_teste": 2,
+  "nao_entendi_teste": 22,
+  "scikit_learn": "1.9.1"
+}

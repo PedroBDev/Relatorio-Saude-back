@@ -1,0 +1,44 @@
+# Sobe o sistema inteiro (API + PostgreSQL) com um comando:
+#     docker compose up --build
+# Swagger: http://localhost:8000/docs
+# Para apagar tudo, inclusive o banco: docker compose down -v
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: saude
+      POSTGRES_PASSWORD: saude123
+      POSTGRES_DB: saude
+      # Mesmo fuso do projeto: os relatórios usam a data de "hoje" do banco.
+      TZ: America/Recife
+      PGTZ: America/Recife
+    volumes:
+      - dados_postgres:/var/lib/postgresql/data
+    # 5433 no computador, para não brigar com um Postgres local na 5432.
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saude -d saude"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      # "db" é o nome do serviço acima: dentro da rede do Docker ele vira o endereço do banco.
+      DATABASE_URL: postgresql+psycopg://saude:saude123@db:5432/saude
+      # Chave só para desenvolvimento. Em produção: JWT_SECRET_KEY=... docker compose up
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-chave-de-desenvolvimento-troque-em-producao}
+      CORS_ORIGINS: '["http://localhost:3000"]'
+      TZ: America/Recife
+      SEED: "1"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        # Espera o Postgres aceitar conexões antes de rodar as migrations.
+        condition: service_healthy
+
+volumes:
+  dados_postgres:
