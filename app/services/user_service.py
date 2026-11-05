@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.security import hash_password
 from app.models.user import User
 from app.schemas.user import UserUpdate
 
@@ -24,7 +25,13 @@ def update_user(db: Session, user_id: int, updated_data: UserUpdate) -> User:
     if not user:
         raise ValueError("Usuário não encontrado.")
     
-    update_fields = updated_data.dict(exclude_unset=True)
+    update_fields = updated_data.model_dump(exclude_unset=True)
+
+    # A senha nunca é gravada em texto: vira o hash na coluna senha_hash.
+    # (Antes ia para um atributo "password" que não existe no banco, e a senha não mudava.)
+    if update_fields.get("password"):
+        user.senha_hash = hash_password(update_fields.pop("password"))
+    update_fields.pop("password", None)
 
     for key, value in update_fields.items():
         if value is not None:

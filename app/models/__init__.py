@@ -7,3 +7,4 @@ from app.models.paciente_grupo import PacienteGrupo
 from app.models.consulta import Consulta
 from app.models.comorbidade import Comorbidade
 from app.models.auditoria import AuditoriaRelatorio
+from app.models.interacao_chat import InteracaoChat

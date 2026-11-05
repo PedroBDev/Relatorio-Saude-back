@@ -9,7 +9,12 @@ O que ele faz:
   3. treina o modelo e mostra as métricas no conjunto de teste;
   4. faz uma validação cruzada com 5 partes;
   5. salva a matriz de confusão como imagem (matriz_confusao.png);
-  6. treina o modelo final com 100% da base e salva em modelo.pkl.
+  6. confere se o modelo novo não ficou pior que o anterior (teste de regressão);
+  7. treina o modelo final com 100% da base e salva em modelo.pkl e metricas.json.
+
+Se o modelo novo ficar pior, o modelo.pkl antigo é mantido. Para aceitar a piora
+mesmo assim (ex.: a base mudou de propósito), rode:
+    python ml/treinar.py --aceitar-piora
 
 O modelo é um Pipeline de duas etapas:
   - TF-IDF de pedaços de palavras: quebra cada palavra em pedaços de 2 a 5 letras
@@ -27,9 +32,13 @@ Comparação feita com esta base (validação cruzada, 5 partes, C=30):
     palavras inteiras (1 a 2 palavras):  acurácia 85,9% | 66% respondidas certas
     pedaços de palavras (2 a 5 letras):  acurácia 93,7% | 82% respondidas certas
 """
+import json
+import sys
+from datetime import datetime
 from pathlib import Path
 
 import joblib
+import sklearn
 import matplotlib
 
 matplotlib.use("Agg")  # gera a imagem sem precisar abrir janela (funciona em qualquer terminal)
@@ -50,6 +59,14 @@ PASTA = Path(__file__).parent
 ARQUIVO_BASE = PASTA / "frases.csv"
 ARQUIVO_MODELO = PASTA / "modelo.pkl"
 ARQUIVO_MATRIZ = PASTA / "matriz_confusao.png"
+# Métricas do último modelo aceito: servem de referência para o próximo treino.
+ARQUIVO_METRICAS = PASTA / "metricas.json"
+
+# Requisito de qualidade do modelo: acurácia mínima na validação cruzada.
+ACURACIA_MINIMA = 0.85
+# Quanto a acurácia pode cair em relação ao modelo anterior sem contar como piora
+# (1 ponto percentual: variações menores que isso são ruído de uma base pequena).
+TOLERANCIA_QUEDA = 0.01
 
 # Semente fixa: a separação treino/teste e a validação cruzada dão sempre o
 # mesmo resultado, então quem rodar de novo encontra os mesmos números.
@@ -144,18 +161,7 @@ def main() -> None:
     with pd.option_context("display.width", 250, "display.max_columns", None):
         print(pd.DataFrame(matriz, index=nomes, columns=nomes))
 
-    # Mesma matriz em imagem, para o artigo.
-    figura, eixo = plt.subplots(figsize=(10, 8))
-    ConfusionMatrixDisplay(matriz, display_labels=nomes).plot(
-        ax=eixo, cmap="Blues", xticks_rotation=45, colorbar=False
-    )
-    eixo.set_title("Matriz de confusão (conjunto de teste)")
-    eixo.set_xlabel("Intenção prevista")
-    eixo.set_ylabel("Intenção verdadeira")
-    figura.tight_layout()
-    figura.savefig(ARQUIVO_MATRIZ, dpi=200)
-    plt.close(figura)
-    print(f"\nImagem salva em: {ARQUIVO_MATRIZ}")
+    # A imagem da matriz (para o artigo) só é salva no fim, se o modelo for aceito.
 
     # ------------------------------------------------------------------
     # 5. Efeito do limite de confiança (o "Não entendi" do testar_modelo.py).
@@ -186,8 +192,44 @@ def main() -> None:
     print("   acurácia de cada parte: " + ", ".join(f"{nota:.1%}" for nota in notas))
     print(f"   média: {notas.mean():.1%}  |  desvio padrão: {notas.std():.1%}")
 
+    metricas = {
+        "data": datetime.now().isoformat(timespec="seconds"),
+        "frases": len(base),
+        "intencoes": int(intencoes.nunique()),
+        "acuracia_validacao_cruzada": round(float(notas.mean()), 4),
+        "desvio_validacao_cruzada": round(float(notas.std()), 4),
+        "acuracia_teste": round(float(acuracia), 4),
+        "respondidas_certas_teste": int((respondidas & acertou).sum()),
+        "erradas_com_confianca_teste": int((respondidas & ~acertou).sum()),
+        "nao_entendi_teste": int((~respondidas).sum()),
+        "scikit_learn": sklearn.__version__,
+    }
+
     # ------------------------------------------------------------------
-    # 7. Modelo final com 100% da base
+    # 7. Teste de regressão de desempenho
+    #
+    # Garante que um treino novo não piora o modelo sem ninguém perceber.
+    # Compara a validação cruzada com a meta mínima e com o último modelo aceito
+    # (metricas.json). Se piorar, o modelo.pkl antigo é mantido.
+    # ------------------------------------------------------------------
+    problemas = verificar_regressao(metricas)
+    if problemas:
+        print("\n" + "!" * 70)
+        print("O MODELO NOVO FICOU PIOR:")
+        for problema in problemas:
+            print(f"   - {problema}")
+        if "--aceitar-piora" not in sys.argv:
+            print("O modelo.pkl anterior foi MANTIDO. Revise as frases que mudaram, ou, se a")
+            print("piora for esperada, rode: python ml/treinar.py --aceitar-piora")
+            print("!" * 70)
+            sys.exit(1)
+        print("--aceitar-piora informado: o modelo novo será salvo mesmo assim.")
+        print("!" * 70)
+    else:
+        print("\nTESTE DE REGRESSÃO: ok, o modelo novo não ficou pior que o anterior.")
+
+    # ------------------------------------------------------------------
+    # 8. Modelo final com 100% da base
     #
     # A avaliação acima já mostrou o desempenho esperado. Agora o modelo que
     # vai ser usado de verdade aprende com todas as frases, inclusive as de teste.
@@ -195,7 +237,47 @@ def main() -> None:
     modelo_final = criar_modelo()
     modelo_final.fit(frases, intencoes)
     joblib.dump(modelo_final, ARQUIVO_MODELO)
+    ARQUIVO_METRICAS.write_text(json.dumps(metricas, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    salvar_matriz(matriz, nomes)
     print(f"\nModelo final (100% da base) salvo em: {ARQUIVO_MODELO}")
+    print(f"Métricas salvas em: {ARQUIVO_METRICAS} (referência para o próximo treino)")
+    print(f"Imagem da matriz de confusão salva em: {ARQUIVO_MATRIZ}")
+
+
+def salvar_matriz(matriz, nomes) -> None:
+    """Salva a matriz de confusão do conjunto de teste como imagem, para o artigo."""
+    figura, eixo = plt.subplots(figsize=(10, 8))
+    ConfusionMatrixDisplay(matriz, display_labels=nomes).plot(
+        ax=eixo, cmap="Blues", xticks_rotation=45, colorbar=False
+    )
+    eixo.set_title("Matriz de confusão (conjunto de teste)")
+    eixo.set_xlabel("Intenção prevista")
+    eixo.set_ylabel("Intenção verdadeira")
+    figura.tight_layout()
+    figura.savefig(ARQUIVO_MATRIZ, dpi=200)
+    plt.close(figura)
+
+
+def verificar_regressao(metricas: dict) -> list[str]:
+    """Lista o que piorou em relação à meta e ao último modelo aceito (vazia = tudo ok)."""
+    problemas = []
+    nova = metricas["acuracia_validacao_cruzada"]
+
+    if nova < ACURACIA_MINIMA:
+        problemas.append(f"acurácia {nova:.1%} abaixo da meta mínima de {ACURACIA_MINIMA:.0%}")
+
+    if ARQUIVO_METRICAS.exists():
+        anterior = json.loads(ARQUIVO_METRICAS.read_text(encoding="utf-8"))
+        antiga = anterior["acuracia_validacao_cruzada"]
+        print(f"\nMODELO ANTERIOR ({anterior['data']}, {anterior['frases']} frases): "
+              f"acurácia {antiga:.1%}  ->  agora: {nova:.1%}")
+        if nova < antiga - TOLERANCIA_QUEDA:
+            problemas.append(f"acurácia caiu de {antiga:.1%} para {nova:.1%} "
+                             f"(mais que a tolerância de {TOLERANCIA_QUEDA:.0%})")
+    else:
+        print("\nPrimeiro treino com teste de regressão: as métricas de agora viram a referência.")
+
+    return problemas
 
 
 if __name__ == "__main__":
