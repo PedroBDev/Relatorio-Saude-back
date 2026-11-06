@@ -1,6 +1,7 @@
 from enum import StrEnum
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
@@ -14,6 +15,9 @@ from app.services.relatorio_service import (
     gerar_relatorio,
     relatorios_permitidos,
 )
+
+
+from app.services.exportacao_service import gerar_excel, gerar_pdf
 
 router = APIRouter(
     prefix="/relatorios",
@@ -70,4 +74,53 @@ def obter_relatorio(
         ano=ano,
         total=len(dados),
         dados=dados,
+    )
+
+@router.get("/{relatorio}/exportar/excel", response_class=StreamingResponse)
+def exportar_relatorio(
+    relatorio: RelatorioNome,
+    mes: int = Query(ge=1, le=12, description="Mês, de 1 a 12"),
+    ano: int = Query(ge=1000, le=9999, description="Ano com 4 dígitos"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        dados = gerar_relatorio(db, current_user, relatorio.value, mes, ano, origem="api")
+    except AcessoNegadoError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ConsultaInvalidaError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ErroInternoError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    excel_file = gerar_excel(dados)
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={relatorio.value}.xlsx"}
+    )
+
+@router.get("/{relatorio}/exportar/pdf", response_class=StreamingResponse)
+def exportar_relatorio_pdf(
+    relatorio: RelatorioNome,
+    mes: int = Query(ge=1, le=12, description="Mês, de 1 a 12"),
+    ano: int = Query(ge=1000, le=9999, description="Ano com 4 dígitos"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        dados = gerar_relatorio(db, current_user, relatorio.value, mes, ano, origem="api")
+    except AcessoNegadoError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ConsultaInvalidaError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ErroInternoError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+    pdf_file = gerar_pdf(dados)
+    return StreamingResponse(
+        pdf_file,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={relatorio.value}.pdf"}
     )
