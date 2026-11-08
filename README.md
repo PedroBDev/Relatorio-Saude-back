@@ -479,6 +479,11 @@ Os testes usam o banco do `.env`, mas cada teste roda dentro de uma transação 
 - `tests/test_relatorios.py`: os endpoints `/relatorios`, incluindo que tela e chat devolvem os mesmos dados.
 - `tests/test_extrair_parametros.py`: a extração de mês e ano.
 - `tests/test_modelo.py`: o modelo salvo (meta de qualidade, modelo atualizado com a base e frases essenciais).
+- `tests/bdd/`: testes **BDD**, com os cenários escritos em português (Gherkin) nos arquivos `features/*.feature` e ligados ao código em `test_cenarios.py`. Cada arquivo é um requisito funcional (RF01 a RF10, com a etiqueta `@RFxx`), e os passos estão no infinitivo ("Dado estar logado como gestor", "Quando enviar a mensagem...", "Então receber o relatório..."). Para ver cada passo dos cenários, ou rodar só um requisito:
+  ```bash
+  pytest tests/bdd --gherkin-terminal-reporter -vv -p no:warnings
+  pytest tests/bdd -m RF07
+  ```
 - `tests/test_municipios.py`: só o admin cadastra municípios (401 sem login, 403 para o gestor).
 - `tests/test_users.py`: as rotas `/users` e o `/auth/me` nunca devolvem o `senha_hash`, e trocar a senha grava o hash.
 - `tests/test_monitorar_drift.py`: os alertas do relatório de monitoramento.
