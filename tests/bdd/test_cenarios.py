@@ -1,6 +1,6 @@
 """Testes BDD: os cenários dos arquivos .feature (em português) ligados ao código.
 
-Cada arquivo .feature é um requisito funcional (RF01 a RF10), e os passos estão
+Cada arquivo .feature é um requisito funcional (RF01 a RF11), e os passos estão
 no infinitivo ("Dado estar logado...", "Quando enviar...", "Então receber...").
 Cada frase é uma das funções abaixo. O {texto} entre chaves vira um parâmetro
 da função, então a mesma função serve para várias frases.
@@ -13,11 +13,14 @@ Rodar (na raiz do projeto, com o venv ativado):
     pytest tests/bdd --gherkin-terminal-reporter -vv    # mostra os passos de cada cenário
     pytest tests/bdd -m RF07                            # só os cenários de um requisito
 """
+from io import BytesIO
+
 import pytest
+from openpyxl import load_workbook
 from pytest_bdd import given, parsers, scenarios, then, when
 from sqlalchemy import func, select
 
-from app.models import Paciente
+from app.models import Municipio, Paciente
 from app.models.auditoria import AuditoriaRelatorio
 from app.models.interacao_chat import InteracaoChat
 from tests.conftest import ANO_AGOSTO, cabecalho
@@ -140,6 +143,12 @@ def abrir_tela(estado, client):
 def abrir_tela_mes(estado, client, mes):
     abrir_relatorio(estado, client, mes)
 
+
+
+@when(parsers.parse('exportar o relatório de gestantes de agosto em "{formato}"'))
+def exportar(estado, client, formato):
+    estado["resposta"] = client.get(f"/relatorios/relatorio_gestantes/exportar/{formato}",
+                                    params={"mes": 8, "ano": ANO_AGOSTO}, headers=cabecalhos(estado))
 
 # --- Então (o resultado esperado) ---------------------------------------------------
 
@@ -302,3 +311,33 @@ def sem_texto_guardado(estado, db):
     registro = db.scalars(select(InteracaoChat).where(InteracaoChat.user_id == estado["usuario"].id)).first()
     valores = [getattr(registro, coluna.key) for coluna in InteracaoChat.__table__.columns]
     assert estado["mensagem"] not in valores
+
+
+def planilha_baixada(estado):
+    return load_workbook(BytesIO(estado["resposta"].content)).active
+
+
+@then(parsers.parse('baixar um arquivo "{extensao}"'))
+def arquivo_baixado(estado, extensao):
+    assert estado["resposta"].status_code == 200
+    disposicao = estado["resposta"].headers["content-disposition"]
+    assert disposicao.startswith("attachment") and disposicao.endswith(f'.{extensao}"')
+
+
+@then(parsers.parse('exibir no título da planilha "{titulo}"'))
+def titulo_da_planilha(estado, titulo):
+    assert planilha_baixada(estado)["A1"].value == titulo
+
+
+@then("exibir no subtítulo da planilha o município do gestor e o mês de agosto")
+def subtitulo_da_planilha(estado, db):
+    municipio = db.get(Municipio, estado["usuario"].municipio_id)
+    subtitulo = planilha_baixada(estado)["A2"].value
+    assert f"{municipio.nome}/{municipio.uf}" in subtitulo
+    assert f"agosto de {ANO_AGOSTO}" in subtitulo
+
+
+@then("exibir a gestante do município do gestor na planilha")
+def gestante_na_planilha(estado, dados):
+    codigos_planilha = [linha[0] for linha in planilha_baixada(estado).iter_rows(min_row=5, values_only=True)]
+    assert codigos_planilha == [dados["codigo_gestante_a"]]
