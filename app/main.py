@@ -34,6 +34,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Deixa o front ler o nome do arquivo nas exportações (Excel e PDF).
+    expose_headers=["Content-Disposition"],
 )
 
 

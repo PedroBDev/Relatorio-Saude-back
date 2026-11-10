@@ -124,6 +124,7 @@ app/
     ├── municipio_service.py
     ├── consultas.py        # consultas SQL permitidas (único ponto que lê os relatórios no banco)
     ├── relatorio_service.py  # permissão + município + consulta + auditoria (usado por /chat e /relatorios)
+    ├── exportacao_service.py # monta o .xlsx (openpyxl) e o .pdf (reportlab) de um relatório
     ├── chat_service.py     # fluxo do chatbot (modelo, contexto, mensagens fixas)
     ├── extrair_parametros.py # extrai mês/ano da frase ("agosto", "ago", "set/26", "mês passado", "08/2026")
     └── permissoes.py       # quais perfis podem pedir cada relatório
@@ -357,6 +358,8 @@ Todos exigem login (`Authorization: Bearer <token>` do `POST /auth/login`).
 |---|---|
 | `GET /relatorios` | lista os relatórios que o usuário pode pedir |
 | `GET /relatorios/{relatorio}?mes=7&ano=2026` | dados de um relatório, para as telas do front |
+| `GET /relatorios/{relatorio}/exportar/excel?mes=7&ano=2026` | o mesmo relatório em Excel (.xlsx), para baixar |
+| `GET /relatorios/{relatorio}/exportar/pdf?mes=7&ano=2026` | o mesmo relatório em PDF, para baixar |
 | `POST /chat` | chatbot: recebe `{"mensagem": "..."}` em linguagem natural |
 
 As duas formas usam o **mesmo** `relatorio_service.gerar_relatorio`, então a tela e o chatbot sempre mostram os mesmos números:
@@ -477,9 +480,10 @@ Os testes usam o banco do `.env`, mas cada teste roda dentro de uma transação 
 
 - `tests/test_chat.py`: acesso sem login, relatório com e sem permissão, isolamento por município, pedido sem mês, resposta do mês na mensagem seguinte, contexto expirado, fora do escopo, confiança baixa, erro de banco, período informado antes do relatório e o registro na `interacoes_chat` (sem o texto digitado).
 - `tests/test_relatorios.py`: os endpoints `/relatorios`, incluindo que tela e chat devolvem os mesmos dados.
+- `tests/test_exportacao.py`: a exportação em Excel e PDF (título com relatório, município e mês; só os dados do município; 401, 403, formato desconhecido e auditoria).
 - `tests/test_extrair_parametros.py`: a extração de mês e ano.
 - `tests/test_modelo.py`: o modelo salvo (meta de qualidade, modelo atualizado com a base e frases essenciais).
-- `tests/bdd/`: testes **BDD**, com os cenários escritos em português (Gherkin) nos arquivos `features/*.feature` e ligados ao código em `test_cenarios.py`. Cada arquivo é um requisito funcional (RF01 a RF10, com a etiqueta `@RFxx`), e os passos estão no infinitivo ("Dado estar logado como gestor", "Quando enviar a mensagem...", "Então receber o relatório..."). Para ver cada passo dos cenários, ou rodar só um requisito:
+- `tests/bdd/`: testes **BDD**, com os cenários escritos em português (Gherkin) nos arquivos `features/*.feature` e ligados ao código em `test_cenarios.py`. Cada arquivo é um requisito funcional (RF01 a RF11, com a etiqueta `@RFxx`), e os passos estão no infinitivo ("Dado estar logado como gestor", "Quando enviar a mensagem...", "Então receber o relatório..."). Para ver cada passo dos cenários, ou rodar só um requisito:
   ```bash
   pytest tests/bdd --gherkin-terminal-reporter -vv -p no:warnings
   pytest tests/bdd -m RF07
