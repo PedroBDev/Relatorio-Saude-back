@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 
 from app.models.auditoria import AuditoriaRelatorio
+from app.models.interacao_chat import InteracaoChat
 from app.services import chat_service, relatorio_service
 from tests.conftest import ANO_AGOSTO, cabecalho
 
@@ -19,6 +20,11 @@ def enviar(client, usuario, mensagem):
 
 def auditorias(db, usuario):
     return db.scalars(select(AuditoriaRelatorio).where(AuditoriaRelatorio.user_id == usuario.id)).all()
+
+
+def interacoes(db, usuario):
+    consulta = select(InteracaoChat).where(InteracaoChat.user_id == usuario.id).order_by(InteracaoChat.id)
+    return db.scalars(consulta).all()
 
 
 # --- Autenticação ----------------------------------------------------------
@@ -201,3 +207,96 @@ def test_erro_do_banco_nao_aparece_para_o_usuario(client, db, dados, monkeypatch
     assert "segredo123" not in resposta.text
     assert "SELECT" not in resposta.text
     assert [r.resultado for r in auditorias(db, gestor)] == ["erro"]
+
+
+# --- Período informado antes do relatório -------------------------------------------
+
+def test_so_o_periodo_pergunta_qual_relatorio(client, dados):
+    resposta = enviar(client, dados["gestor_a"], f"agosto de {ANO_AGOSTO}")
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["tipo"] == "pergunta"
+    assert corpo["intencao"] is None
+    assert corpo["parametros"] == {"mes": 8, "ano": ANO_AGOSTO}
+    assert "relatório" in corpo["texto"]
+    assert corpo["dados"] == []
+
+
+def test_relatorio_depois_do_periodo_usa_o_periodo_guardado(client, dados):
+    gestor = dados["gestor_a"]
+    enviar(client, gestor, f"agosto de {ANO_AGOSTO}")
+
+    corpo = enviar(client, gestor, "gestantes").json()
+
+    assert corpo["tipo"] == "relatorio"
+    assert corpo["intencao"] == "relatorio_gestantes"
+    assert corpo["parametros"] == {"mes": 8, "ano": ANO_AGOSTO}
+    assert dados["codigo_gestante_a"] in [linha["codigo"] for linha in corpo["dados"]]
+
+
+def test_mes_da_mensagem_nova_vale_mais_que_o_guardado(client, dados):
+    gestor = dados["gestor_a"]
+    enviar(client, gestor, f"agosto de {ANO_AGOSTO}")
+
+    corpo = enviar(client, gestor, f"gestantes de julho de {ANO_AGOSTO}").json()
+
+    assert corpo["tipo"] == "relatorio"
+    assert corpo["parametros"] == {"mes": 7, "ano": ANO_AGOSTO}
+
+
+def test_outro_assunto_esquece_o_periodo_guardado(client, dados):
+    gestor = dados["gestor_a"]
+    enviar(client, gestor, f"agosto de {ANO_AGOSTO}")
+    enviar(client, gestor, "bom dia")
+
+    corpo = enviar(client, gestor, "gestantes").json()
+
+    # O "bom dia" encerrou o assunto: sem período guardado, o chat pergunta o mês.
+    assert corpo["tipo"] == "pergunta"
+    assert corpo["intencao"] == "relatorio_gestantes"
+
+
+def test_periodo_guardado_e_separado_por_usuario(client, dados):
+    enviar(client, dados["gestor_a"], f"agosto de {ANO_AGOSTO}")
+
+    corpo = enviar(client, dados["admin_sem_municipio"], "gestantes").json()
+
+    # O admin não informou período: o "agosto" do gestor não vale para ele.
+    assert corpo["tipo"] == "pergunta"
+
+
+# --- Monitoramento (tabela interacoes_chat) ----------------------------------------
+
+def test_cada_mensagem_registra_intencao_e_confianca(client, db, dados):
+    gestor = dados["gestor_a"]
+    enviar(client, gestor, "oi")
+    enviar(client, gestor, "relatório das gestantes")
+    enviar(client, gestor, "agosto")
+
+    saudacao, pedido, resposta_do_mes = interacoes(db, gestor)
+    assert (saudacao.intencao_prevista, saudacao.resultado) == ("saudacao", "mensagem")
+    assert (pedido.intencao_prevista, pedido.resultado) == ("relatorio_gestantes", "pergunta")
+    assert 0.6 <= pedido.confianca <= 1
+    # "agosto" completou o pedido anterior sem passar pelo modelo
+    assert (resposta_do_mes.intencao_prevista, resposta_do_mes.confianca) == (None, None)
+    assert resposta_do_mes.resultado == "relatorio"
+    assert saudacao.versao_modelo  # data do treino, do metricas.json
+
+
+def test_nao_entendi_fica_registrado(client, db, dados, monkeypatch):
+    monkeypatch.setattr(chat_service, "_classificar", lambda mensagem: ("relatorio_idosos", 0.3))
+    enviar(client, dados["gestor_a"], "xpto")
+
+    [interacao] = interacoes(db, dados["gestor_a"])
+    assert interacao.resultado == "nao_entendi"
+    assert interacao.intencao_prevista == "relatorio_idosos"
+    assert interacao.confianca == 0.3
+
+
+def test_interacao_nao_guarda_o_texto_digitado(client, db, dados):
+    enviar(client, dados["gestor_a"], "gestantes de agosto da Maria da Silva")
+
+    [interacao] = interacoes(db, dados["gestor_a"])
+    valores = [str(getattr(interacao, coluna.key)) for coluna in InteracaoChat.__table__.columns]
+    assert not any("Maria" in valor for valor in valores)

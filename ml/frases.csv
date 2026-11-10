@@ -491,3 +491,17 @@ kkk q isso,fora_do_escopo
 como anda a vida?,fora_do_escopo
 outra coisa,fora_do_escopo
 deixa p la,fora_do_escopo
+"bom dia, tudo bem? preciso das gestantes de julho",relatorio_gestantes
+"olá, espero que esteja tudo certo por aí, gostaria do relatório de pré-natal de março",relatorio_gestantes
+"olá, boa tarde, espero que esteja tudo bem, estou preparando a reunião com o secretário e queria ver as gestantes de outubro",relatorio_gestantes
+"boa tarde, tudo bom? me manda os hipertensos de maio",relatorio_hipertensos
+"oi, tudo tranquilo? queria ver o controle de pressão de fevereiro",relatorio_hipertensos
+"bom dia, tudo bem? aqui é da secretaria municipal de saúde, estamos fechando o mês e preciso do relatório dos hipertensos de setembro",relatorio_hipertensos
+"olá, bom dia! pode me passar os diabéticos de abril?",relatorio_diabeticos
+"boa noite, tudo bem por aí? preciso da glicada dos pacientes de junho",relatorio_diabeticos
+"oi, tudo certo? quero as crianças vacinadas de agosto",relatorio_criancas
+"bom dia equipe, espero que estejam bem, me envia a puericultura de setembro",relatorio_criancas
+"olá, tudo bem com você? queria os idosos de outubro",relatorio_idosos
+"boa tarde, tudo joia? preciso do relatório da terceira idade de janeiro",relatorio_idosos
+"oi, bom dia! me passa a cobertura geral de julho",resumo_cobertura
+"olá, tudo bem? gostaria do resumo de todos os grupos de maio",resumo_cobertura

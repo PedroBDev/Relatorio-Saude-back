@@ -4,6 +4,7 @@ Como rodar (na raiz do projeto, com o venv ativado):
     python -m app.seed            # só roda se ainda não houver pacientes
     python -m app.seed --limpar   # apaga os pacientes/consultas e gera tudo de novo
 
+Também cria dois usuários de demonstração, se ainda não existirem (USUARIOS_DEMO).
 Os nomes, datas e medições são sorteados. Nenhum dado é real.
 """
 import random
@@ -14,6 +15,7 @@ from decimal import Decimal
 from sqlalchemy import delete, func, select
 
 from app.core.database import SessionLocal
+from app.core.security import hash_password
 from app.models import (
     Comorbidade,
     Consulta,
@@ -21,10 +23,18 @@ from app.models import (
     Paciente,
     PacienteGrupo,
     UnidadeSaude,
+    User,
 )
 
 # Semente fixa: toda vez que rodar, gera os mesmos dados (facilita comparar resultados).
 random.seed(42)
+
+# Para conseguir entrar no sistema num banco novo (ex.: no Docker), já que o
+# /auth/register só pode ser usado por um admin. Senhas só para desenvolvimento.
+USUARIOS_DEMO = [
+    {"nome": "Admin Demo", "email": "admin@saude.dev", "senha": "admin123", "role": "admin"},
+    {"nome": "Gestor Demo", "email": "gestor@saude.dev", "senha": "gestor123", "role": "gestor"},
+]
 
 HOJE = date.today()
 TOTAL_PACIENTES = 1500
@@ -161,6 +171,15 @@ def gerar_paciente(db, unidades: list[UnidadeSaude]) -> None:
             db.add(consulta("idoso", dia))
 
 
+def criar_usuarios_demo(db, municipio: Municipio) -> None:
+    for dados in USUARIOS_DEMO:
+        if db.scalar(select(User).where(User.email == dados["email"])):
+            continue
+        db.add(User(nome=dados["nome"], email=dados["email"], senha_hash=hash_password(dados["senha"]),
+                    role=dados["role"], municipio_id=municipio.id))
+        print(f"Usuário criado: {dados['email']} / {dados['senha']} ({dados['role']})")
+
+
 def main() -> None:
     limpar = "--limpar" in sys.argv
     db = SessionLocal()
@@ -182,6 +201,8 @@ def main() -> None:
             municipio = Municipio(nome="Recife", uf="PE")
             db.add(municipio)
             db.flush()
+
+        criar_usuarios_demo(db, municipio)
 
         unidades = [UnidadeSaude(nome=nome, tipo=tipo, municipio_id=municipio.id)
                     for nome, tipo in UNIDADES]

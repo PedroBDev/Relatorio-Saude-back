@@ -14,6 +14,7 @@ class UserResponse(BaseModel):
     nome: str
     email: EmailStr
     municipio_id: int | None = None
+    role: str
 
 
 class LoginRequest(BaseModel):

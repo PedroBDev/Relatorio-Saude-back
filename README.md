@@ -28,6 +28,26 @@ A API guarda os pacientes e as consultas, calcula os relatórios de cada grupo (
 
 ## Como rodar
 
+### Jeito rápido: Docker
+
+Com o [Docker](https://docs.docker.com/get-docker/) instalado, na raiz do projeto:
+
+```bash
+docker compose up --build
+```
+
+Isso sobe o PostgreSQL e a API, roda as migrations e gera os dados falsos (só na primeira vez). Não precisa de `.env` nem de Python instalado.
+
+- Swagger: http://localhost:8000/docs
+- Usuários de demonstração: `gestor@saude.dev` / `gestor123` e `admin@saude.dev` / `admin123`
+- O banco fica acessível no computador pela porta **5433** (para não brigar com um Postgres local na 5432).
+- `docker compose down` para parar. `docker compose down -v` apaga também o banco.
+- Depois de retreinar o modelo, rode de novo com `--build` para a imagem pegar o `modelo.pkl` novo.
+
+Arquivos: `Dockerfile` (imagem da API), `docker-compose.yml` (API + banco) e `docker/iniciar.sh` (migrations, seed e uvicorn).
+
+Para desenvolver, siga os passos abaixo.
+
 ### 1. Ambiente Python
 
 ```bash
@@ -59,7 +79,7 @@ JWT_SECRET_KEY=<gere com: python -c "import secrets; print(secrets.token_hex(32)
 
 ```bash
 alembic upgrade head      # cria tabelas, funções e views
-python -m app.seed        # gera 1500 pacientes falsos e um ano de consultas
+python -m app.seed        # gera 1500 pacientes falsos, um ano de consultas e os usuários de demonstração
 ```
 
 Para apagar os dados falsos e gerar de novo: `python -m app.seed --limpar`.
@@ -88,6 +108,7 @@ A documentação interativa fica em **http://localhost:8000/docs**. Para testar 
 app/
 ├── main.py                 # cria o app FastAPI e registra as rotas
 ├── seed.py                 # gera dados falsos para desenvolvimento
+├── monitorar_drift.py      # relatório semanal do modelo do chatbot (data drift)
 ├── api/
 │   ├── dependencies.py     # get_current_user / get_current_admin (leem o token JWT)
 │   └── routes/             # auth, municipios, users, chat, relatorios
@@ -109,6 +130,8 @@ app/
 ml/                         # base de frases, treino e teste do modelo do chatbot
 tests/                      # testes automatizados (pytest)
 alembic/versions/           # migrations
+docker/iniciar.sh           # o que o container da API executa ao subir
+Dockerfile, docker-compose.yml
 ```
 
 O fluxo de uma requisição é: **rota** (recebe e responde) → **schema** (valida) → **service** (regra de negócio) → **model** (banco).
@@ -355,11 +378,13 @@ POST /chat ── modelo de ML ───┘    (permissão, município, auditori
 
 ### Fluxo do `POST /chat`
 
-1. Se o chatbot tinha perguntado o mês e a mensagem traz um mês ("agosto"), continua o pedido anterior. O contexto fica em memória por usuário e expira em 5 minutos.
-2. O modelo classifica a intenção. Confiança abaixo de 60% → "Não entendi, pode reformular?".
-3. `saudacao`, `ajuda` e `fora_do_escopo` → resposta fixa, sem consultar o banco.
-4. Relatório sem mês → pergunta "De qual mês você quer o relatório?".
-5. Gera o relatório pelo `relatorio_service`.
+1. Se o chatbot tinha perguntado o mês e a mensagem traz um mês ("agosto"), continua o pedido anterior. O que fica pendente (a intenção ou o período) fica em memória por usuário e expira em 5 minutos.
+2. O modelo classifica a intenção.
+3. A mensagem tem só o período, sem relatório reconhecido ("agosto de 2026", "set/26", "mês passado") → pergunta "De qual relatório você quer os dados de agosto de 2026?" e guarda o período. Na mensagem seguinte, "gestantes" já gera o relatório de agosto.
+4. Confiança abaixo de 60% → "Não entendi, pode reformular?".
+5. `saudacao`, `ajuda` e `fora_do_escopo` → resposta fixa, sem consultar o banco (e esquecem o que estava pendente).
+6. Relatório sem mês → usa o período guardado no passo 3, se houver; senão, pergunta "De qual mês você quer o relatório?".
+7. Gera o relatório pelo `relatorio_service`.
 
 Resposta, sempre com os mesmos campos:
 
@@ -370,6 +395,30 @@ Resposta, sempre com os mesmos campos:
 ### Auditoria
 
 Cada pedido de relatório, pela tela ou pelo chat, vira uma linha em `auditoria_relatorios`: quem pediu, a origem (`chat` ou `api`), o relatório, o mês e ano, o resultado (`ok`, `negado` ou `erro`), a quantidade de registros e a data e hora. **Não guarda dados de pacientes nem o texto digitado.**
+
+### Monitoramento do modelo (data drift)
+
+Cada mensagem do `POST /chat` vira uma linha em `interacoes_chat`: a intenção prevista, a confiança, o tipo de resposta (`relatorio`, `pergunta`, `mensagem`, `nao_entendi` ou `erro`), a data do treino do modelo (do `metricas.json`) e a data e hora. **O texto digitado não é gravado** (LGPD).
+
+Para ver o resumo das últimas semanas:
+
+```bash
+python -m app.monitorar_drift              # últimas 8 semanas
+python -m app.monitorar_drift --semanas 12
+```
+
+```
+Semana       Mensagens  Não entendi  Confiança  Fora do escopo
+12/10/2026          40          10%       0.81              0%
+19/10/2026          40          13%       0.79              0%
+02/11/2026          40          35%       0.69              0%
+
+ATENÇÃO: possível data drift.
+  - "Não entendi" subiu de 11% para 35%.
+  - Confiança média caiu de 0.80 para 0.69.
+```
+
+O alerta compara a última semana com a média das anteriores: dispara se o "não entendi" subir mais de 10 pontos ou se a confiança média cair mais de 0,10. Semanas com menos de 20 mensagens ficam de fora. Se o alerta aparecer, os gestores estão escrevendo de um jeito que o modelo não conhece: junte frases novas parecidas com as reais no `ml/frases.csv` e siga o roteiro de treino.
 
 ### Testando pelo `/docs`
 
@@ -392,7 +441,9 @@ O TF-IDF usa **pedaços de palavras** (2 a 5 letras, `analyzer="char_wb"`) em ve
 | `verificar_base.py` | confere o `frases.csv`: linhas vazias, frases duplicadas ou quase iguais, mínimo por intenção |
 | `treinar.py` | treina, mostra as métricas e salva `modelo.pkl` e `matriz_confusao.png` |
 | `testar_modelo.py` | classifica frases digitadas no terminal (`sair` encerra) |
+| `comparar_algoritmos.py` | compara Regressão Logística, SVM, Naive Bayes, Random Forest, KNN e um baseline de regras, inclusive com erros de digitação. Não altera o modelo. Resumo em `docs/comparacao_algoritmos.pdf` |
 | `modelo.pkl` | o modelo treinado, que a API carrega ao subir. Depende da versão do scikit-learn: cada pessoa gera o seu |
+| `metricas.json` | as métricas do último modelo aceito. É a referência do teste de regressão: o próximo treino não pode ficar pior |
 
 ### Roteiro: sempre que mudar o `frases.csv` ou o `treinar.py`
 
@@ -407,9 +458,9 @@ uvicorn app.main:app --reload
 ```
 
 1. **Conferir a base.** Salve o `frases.csv` (Ctrl+S) antes. O esperado é `Base OK`; se aparecer **AVISO**, corrija antes de treinar.
-2. **Treinar.** Compare com o resultado anterior para saber se a mudança ajudou. Referência atual: validação cruzada de **93,7%** e **1** resposta errada com confiança no conjunto de teste.
+2. **Treinar.** O `treinar.py` compara o resultado com o `metricas.json` (o último modelo aceito). Se a validação cruzada ficar abaixo de **85%** (a meta) ou cair mais de **1 ponto**, ele **não salva** o modelo novo e mantém o anterior. Se a piora for esperada (por exemplo, a base ficou mais difícil de propósito), rode `python ml/treinar.py --aceitar-piora`. Referência atual: **93,9%** na validação cruzada, com 506 frases.
 3. **Testar no terminal**, principalmente as frases que motivaram a mudança.
-4. **Rodar os testes.** Os testes do chat usam o modelo de verdade: se algum quebrar depois do treino, o modelo novo passou a errar uma frase importante.
+4. **Rodar os testes.** O `tests/test_modelo.py` confere se o modelo atende à meta, se ele foi treinado com o `frases.csv` atual (pega o "mudei as frases e esqueci de treinar") e se continua acertando 18 frases essenciais que não estão na base. Os testes do chat também usam o modelo de verdade.
 5. **Reiniciar a API.** Ela só lê o `modelo.pkl` quando sobe, e o `--reload` só reage a arquivos `.py`. Sem reiniciar, o `/chat` continua com o modelo antigo.
 
 **Para melhorar o modelo:** teste frases, anote as que ele erra ou não entende, acrescente variações delas ao `frases.csv` (no formato `frase,intencao`; frase com vírgula vai entre aspas) e siga o roteiro. As intenções com mais confusão hoje são `ajuda` e `fora_do_escopo`.
@@ -424,9 +475,19 @@ pytest -v
 
 Os testes usam o banco do `.env`, mas cada teste roda dentro de uma transação desfeita no final: **nada fica gravado**. Precisam de `alembic upgrade head` e do `ml/modelo.pkl`.
 
-- `tests/test_chat.py`: acesso sem login, relatório com e sem permissão, isolamento por município, pedido sem mês, resposta do mês na mensagem seguinte, contexto expirado, fora do escopo, confiança baixa e erro de banco.
+- `tests/test_chat.py`: acesso sem login, relatório com e sem permissão, isolamento por município, pedido sem mês, resposta do mês na mensagem seguinte, contexto expirado, fora do escopo, confiança baixa, erro de banco, período informado antes do relatório e o registro na `interacoes_chat` (sem o texto digitado).
 - `tests/test_relatorios.py`: os endpoints `/relatorios`, incluindo que tela e chat devolvem os mesmos dados.
 - `tests/test_extrair_parametros.py`: a extração de mês e ano.
+- `tests/test_modelo.py`: o modelo salvo (meta de qualidade, modelo atualizado com a base e frases essenciais).
+- `tests/bdd/`: testes **BDD**, com os cenários escritos em português (Gherkin) nos arquivos `features/*.feature` e ligados ao código em `test_cenarios.py`. Cada arquivo é um requisito funcional (RF01 a RF10, com a etiqueta `@RFxx`), e os passos estão no infinitivo ("Dado estar logado como gestor", "Quando enviar a mensagem...", "Então receber o relatório..."). Para ver cada passo dos cenários, ou rodar só um requisito:
+  ```bash
+  pytest tests/bdd --gherkin-terminal-reporter -vv -p no:warnings
+  pytest tests/bdd -m RF07
+  ```
+- `tests/test_municipios.py`: só o admin cadastra municípios (401 sem login, 403 para o gestor).
+- `tests/test_users.py`: as rotas `/users` e o `/auth/me` nunca devolvem o `senha_hash`, e trocar a senha grava o hash.
+- `tests/test_monitorar_drift.py`: os alertas do relatório de monitoramento.
+- `tests/test_robustez.py`: o modelo e o `/chat` com entradas ruins: erros de digitação, maiúsculas e espaços, lixo (emoji, letras aleatórias, texto enorme), cumprimento misturado com pedido e texto com SQL. A regra principal: entrada sem sentido nunca vira relatório com confiança.
 
 ---
 
@@ -473,5 +534,5 @@ Uma migration que **já foi enviada** para o repositório não deve ser editada.
 - **Correções alteram o passado:** como os relatórios são calculados a partir das consultas, corrigir uma consulta antiga muda o relatório daquele mês. Se for preciso "congelar" o relatório como foi entregue (auditoria), a ideia é criar uma tabela de fechamento mensal que salve o resultado das funções.
 - **Banco sem usuário somente leitura (melhoria futura):** hoje toda a API conecta com o mesmo usuário do Postgres, dono do banco. Quem garante que os relatórios só leem dados é o código (`consultas.py` só aceita `SELECT`). A melhoria planejada é criar um usuário do Postgres só com `SELECT` nas tabelas e `EXECUTE` nas funções `fn_*`, e fazer o `consultas.py` usar uma conexão separada com ele. Assim o próprio banco recusaria qualquer escrita vinda dos relatórios e do chatbot.
 - **Contexto do chat em memória:** some se o servidor reiniciar e não funciona com vários processos do servidor ao mesmo tempo. Suficiente para o projeto acadêmico.
-- **Rotas `/users` devolvem `senha_hash`:** elas não usam `response_model`. Corrigir com `UserResponse`.
+- **Usuários de demonstração:** o seed cria `admin@saude.dev` e `gestor@saude.dev` com senhas fixas. Servem só para desenvolvimento e para a apresentação.
 - **Ainda não implementado:** geração do PDF e integração com o front-end.
